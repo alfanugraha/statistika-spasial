@@ -1,0 +1,197 @@
+# Autokorelasi Spasial
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sp)
+library(gstat)
+library(spatstat)
+library(spdep)
+library(tmap)
+library(raster)
+library(colorRamps) 
+library(vegan)
+library(ncf)
+```
+
+## Autokorelasi Temporal
+
+```{r}
+set.seed(0)
+d<-(1:20)+rnorm(20)
+a <- d[-length(d)]
+b <- d[-1]
+plot(a, b, xlab='t', ylab='t-1')
+```
+
+```{r}
+acf(d)
+```
+
+## Pemodelan Proses Spasial
+
+```{r}
+load(url("https://github.com/raoy/data/raw/master/moransI.RData"))
+```
+
+```{r}
+str(s1, max.level = 2)
+```
+
+```{r}
+s1@data
+```
+
+```{r}
+tmap_mode("view")
+tm_basemap("Stamen.TonerLite") + 
+  tm_shape(s1) +
+  tm_polygons(style = "quantile", col = "Income", alpha = 0.5) +
+  tm_legend(outside = TRUE, text.size = .8)
+```
+
+```{r}
+nb <- poly2nb(s1, queen=TRUE)
+str(nb)
+summary(nb)
+```
+
+
+```{r warning=F}
+xy <- sp::coordinates(s1)
+plot(s1, border='grey', lwd=1)
+plot(nb, xy, col='red', lwd=1, add=TRUE)
+```
+
+Selanjutnya, kita perlu mempersiapkan object listw agar dapat menggunakan fungsi moran() untuk menghitung autokorelasi dengan pendekatan indeks Moran.
+
+```{r}
+lw <- nb2listw(nb, style="W", zero.policy=TRUE)
+lw$weights
+```
+
+```{r}
+moran(s1$Income, lw, n=length(lw$neighbours), S0=Szero(lw))
+```
+
+Output di atas menunjukkan bahwa pendapatan di Maine memiliki indeks Moran sebesar 0.2828111 dan kurtosis sebesar 2.249902.
+
+```{r}
+moran.test(s1$Income,lw)
+```
+
+Output di atas menunjukkan bahwa p-value = 0.01231, artinya kita dapat menolak hipotesis nol pada taraf 0.05 dan menyimpulkan bahwa terdapat autokorelasi spasial pada data pendapatan tersebut.
+
+```{r}
+# monte carlo
+moran.mc(s1$Income,lw, nsim=99)
+```
+
+Moran scatterplot
+
+```{r}
+moran.plot(s1$Income, lw, labels=s1$NAME)
+```
+
+```{r}
+local <- localmoran(s1$Income, listw = lw)
+head(local)
+```
+
+
+```{r}
+moran.map<-cbind(s1,local)
+tm_shape(moran.map) +
+  tm_fill(col = "Ii",
+          style = "quantile",
+          title = "local moran statistic") 
+```
+
+Tinggi cenderung berkorelasi positif
+
+
+Plot LISA Clusters
+
+```{r}
+quadrant <- vector(mode="numeric",length=nrow(local))
+
+# centers the variable of interest around its mean
+m.qualification <- s1$Income - mean(s1$Income)     
+
+# centers the local Moran's around the mean
+m.local <- local[,1] - mean(local[,1])    
+
+# significance threshold
+signif <- 0.05
+
+# builds a data quadrant
+quadrant[m.qualification >0 & m.local>0] <- 4  
+quadrant[m.qualification <0 & m.local<0] <- 1      
+quadrant[m.qualification <0 & m.local>0] <- 2
+quadrant[m.qualification >0 & m.local<0] <- 3
+quadrant[local[,5]>signif] <- 0   
+
+# plot in r
+brks <- c(0,1,2,3,4)
+colors <- c("white","blue",rgb(0,0,1,alpha=0.4),rgb(1,0,0,alpha=0.4),"red")
+plot(s1,border="lightgray",col=colors[findInterval(quadrant,brks,all.inside=FALSE)])
+box()
+legend("bottomleft", legend = c("insignificant","low-low","low-high","high-low","high-high"),
+       fill=colors,bty="n")
+```
+
+
+```{r}
+side=30
+my.mat <- matrix(NA, nrow=side, ncol=side)
+x.coord <- rep(1:side, each=side)
+y.coord <- rep(1:side, times=side)
+xy <- data.frame(x.coord, y.coord)
+# all paiwise euclidean distances between the cells
+xy.dist <- dist(xy)
+# PCNM axes of the dist. matrix (from 'vegan' package)
+pcnm.axes <- pcnm(xy.dist)$vectors
+# using 8th PCNM axis as my atificial z variable
+z.value <- pcnm.axes[,8]*200 + rnorm(side*side, 0, 1)
+# plotting the artificial spatial data
+my.mat[] <- z.value
+r <- raster(my.mat)
+plot(r, axes=F, col=matlab.like(20))
+```
+
+```{r}
+ncf.cor <- correlog(x.coord, y.coord, z.value,
+                    increment=2, resamp=100)
+```
+
+```{r}
+plot(ncf.cor)
+```
+
+```{r}
+# 'nb' - neighbourhood of each cell
+r.nb <- dnearneigh(as.matrix(xy), d1=0.5, d2=1.5)
+# 'nb' - an alternative way to specify the neighbourhood
+# r.nb <- cell2nb(nrow=side, ncol=side, type="queen")
+sp.cor <- sp.correlogram(r.nb, z.value, order=15,
+                      method="I",randomisation=FALSE)
+plot(sp.cor)
+```
+
+
+Variogram
+
+```{r}
+xy$z.value<-z.value
+coordinates(xy)<-c("x.coord", "y.coord")
+variocloud <- variogram(z.value ~ 1, data=xy, cloud = TRUE)
+plot(variocloud)
+```
+
+
+```{r}
+vario <- variogram(z.value ~ 1, xy, cutoff = 30)
+plot(vario, pch = 16, cex = 1.5)
+```
+
+nilai index moran mendekati 1 brarti kuat sekali autocol nya brarti cenderung tinggi dan bergerombol
+jika nilai mendekati negatif 1 cenderung uniform dan kontras 

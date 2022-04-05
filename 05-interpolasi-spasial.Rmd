@@ -1,0 +1,126 @@
+# Interpolasi Spasial
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(MASS)
+library(raster)
+library(gstat)
+library(sp)
+```
+
+## Trend surface interpolation
+
+```{r}
+data(topo)
+str(topo)
+```
+
+Selanjutnya kita perlu mendefinisikan koordinat pada data `topo`
+
+```{r}
+coordinates(topo) <- ~x+y
+par(mfrow=c(1,2))
+plot(topo)
+plot(topo, pch=1, cex=topo$z/600)
+```
+
+Tahapan selanjutnya adalah mempersiapkan grid untuk interpolasi.
+
+```{r}
+x=seq(0,6.3, by=0.1);y=seq(0,6.3, by=0.1)
+topo.grid <- expand.grid(x=x,y=y)
+gridded(topo.grid) <- ~x+y
+plot(topo.grid)
+```
+
+
+### 1st-Order Trend Surface
+
+```{r}
+x1 <- gstat(formula=topo$z ~ 1, data=topo, degree=1)
+kt <- predict(x1, newdata=topo.grid)
+```
+
+```{r}
+spplot(kt[1], contour=TRUE,main="topo trend surface (1)-gstat")
+```
+
+### 2st-Order Trend Surface
+
+```{r}
+x <- gstat(formula=topo$z ~ 1, data=topo, degree=2)
+kt2 <- predict(x, newdata=topo.grid)
+```
+
+```{r}
+spplot( kt2[1], contour=TRUE, main="topo trend surface (2)-gstat")
+```
+
+```{r}
+x <- gstat(formula=topo$z ~ 1, data=topo, degree=3)
+kt3 <- predict(x, newdata=topo.grid)
+```
+
+```{r}
+spplot( kt3[1], contour=TRUE, main="topo trend surface (3)-gstat")
+```
+
+## Inverse Distance Weighting (IDW)
+
+```{r}
+kid <- krige(topo$z ~ 1, topo,  topo.grid, NULL)
+```
+
+```{r}
+spplot(kid["var1.pred"], main = "Topo IDW",contour=TRUE)
+```
+
+## Thiessen Polygons
+
+```{r}
+data(meuse)
+hist(meuse$zinc)
+```
+
+```{r}
+plot(meuse$x,meuse$y,asp=1)
+```
+
+```{r}
+coordinates(meuse) = ~x + y
+plot(meuse,pch=1, cex=meuse$zinc/500)
+```
+
+```{r}
+data(meuse.grid)
+str(meuse.grid)
+```
+
+```{r}
+coordinates(meuse.grid) = ~x + y # converts to spatial class
+gridded(meuse.grid) <- TRUE
+zn.tp = krige(log(zinc) ~ 1, meuse, meuse.grid, nmax = 1)
+```
+
+```{r}
+#for this search, the neighborhood is set to nmax=1
+image(zn.tp["var1.pred"])
+points(meuse, pch = "+", cex = 0.65)
+```
+
+```{r}
+image(zn.tp["var1.pred"])
+points(meuse, pch = "+", cex = 0.65)
+cc <- coordinates(meuse)
+plot(tripack::voronoi.mosaic(cc[, 1], cc[, 2]), do.points = FALSE, add = TRUE)
+```
+
+## Spline interpolation
+
+```{r}
+meuse.zinc <- data.frame(cbind(meuse$x, meuse$y,meuse$zinc))
+meuse.akim <- akima::interp(meuse.zinc$X1, meuse.zinc$X2, meuse.zinc$X3)
+image(meuse.akim,,xlab="", ylab="",asp=1)
+contour(meuse.akim,add=TRUE, levels =   seq(100,2000,200))
+```
+

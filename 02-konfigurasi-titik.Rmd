@@ -1,0 +1,184 @@
+# Konfigurasi Titik dalam Ruang
+
+## Package
+
+`sp` dan `gstat`
+
+## Meuse dataset
+
+```{r}
+data("swedishpines")
+X <- swedishpines
+plot(X)
+```
+
+```{r}
+summary(X)
+```
+
+```{r}
+contour(density(X, 10), axes=F)
+```
+
+
+```{r}
+q <- quadratcount(X, nx = 6, ny = 5)
+q
+```
+
+```{r}
+plot(q)
+```
+
+```{r}
+mu <- mean(q)
+sigma <- sd(q)^2
+VMR <- sigma/mu
+VMR
+```
+
+```{r}
+quadrat.test(q)
+```
+
+```{r}
+quadrat.test(q, alt = "regular")
+```
+
+## Empirical K-Function
+
+```{r}
+nn <- nndist(swedishpines)
+hist(nn)
+```
+
+```{r}
+K <- Kest(swedishpines, correction = "Ripley")
+plot(K)
+```
+
+```{r}
+E <- envelope(swedishpines, Kest, nsim=99)
+```
+
+```{r}
+plot(E)
+```
+
+```{r}
+mad.test(swedishpines, Kest, nsim=99, alternative="two.sided")
+```
+
+kiri uniform
+klo berimpit dengan poison brarti acak
+kanan cluster
+
+
+```{r}
+city <- readRDS('city.rds')
+crime <- readRDS('crime.rds')
+```
+
+```{r}
+border <- city
+coord.city <- city@polygons[[1]]@Polygons[[1]]@coords
+window <- owin(poly = data.frame(x = rev(coord.city[,1]), y = rev(coord.city[,2])))
+plot(window)
+```
+
+```{r}
+crime2 <- remove.duplicates(crime)
+crime2 <- crime2[crime,]
+crime2.ppp <- ppp(x=crime2@coords[,1], y=crime2@coords[,2], window=window)
+quad <- quadratcount(crime2.ppp)
+plot(quad, col="red")
+plot(crime2.ppp, add=T, pch=20, cex = 0.5)
+```
+
+```{r}
+quadrat.test(crime2.ppp,alt="cluster")
+```
+
+
+
+
+### Using K-Function
+
+```{r}
+K<- Kest(crime2.ppp, correction="Ripley")
+plot(K)
+```
+
+```{r}
+mad.test(crime2.ppp, Kest, nsim = 20, alternative = "greater")
+```
+
+```{r}
+pp0 <- rpoispp(50)
+plot(pp0)
+```
+
+```{r}
+pp3 <- rMatClust(12, 0.1, 4)
+plot(pp3)
+```
+
+
+
+```{r}
+set.seed(2022)
+a <- rpoispp(lambda=0.5, win=owin(c(0,20), c(0,20)))
+quadrat.test(a, nx=2, ny=2)
+```
+
+```{r}
+summary(a)
+```
+
+```{r}
+set.seed(2022)
+data(bei)
+mad.test(bei)
+```
+
+
+```{r}
+set.seed(2022)
+data(bei)
+c <- envelope(bei, Kest, nsim=99, correction="Ripley")
+```
+
+```{r}
+plot(c, main="")
+```
+
+
+```{r}
+mad.test(bei, alternative = 'greater')
+```
+
+```{r}
+plot(bei)
+```
+
+
+```{r}
+library(rgdal)
+library(raster)
+library(spatstat)
+library(maptools)
+```
+
+Load spatial points
+
+```{r}
+pts <- readOGR(dsn=".", layer="points")
+```
+
+Convert to planar point patter
+
+```{r}
+pts.ppp <- as.ppp(pts)
+unitname(pts.ppp) <- c("degree", "degrees")
+```
+

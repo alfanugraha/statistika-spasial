@@ -1,0 +1,346 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r eval=FALSE}
+library(skimr)
+library(leaflet)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(sp)
+library(gstat)
+library(raster)
+library(maps)
+library(tripack)
+```
+
+
+## Persiapan dan Eksplorasi Data
+
+```{r}
+air_raw_data <- read.csv("annual_conc_by_monitor_2021.csv", stringsAsFactors = T)
+air <- air_raw_data
+names(air) <- c("State.Code", "County.Code", "Site.Num", "Parameter.Code", 
+"POC", "Latitude", "Longitude", "Datum", "Parameter.Name", "Sample.Duration", 
+"Pollutant.Standard", "Metric.Used", "Method.Name", "Year", "Units.of.Measure", 
+"Event.Type", "Observation.Count", "Observation.Percent", "Completeness.Indicator", 
+"Valid.Day.Count", "Required.Day.Count", "Exceptional.Data.Count", 
+"Null.Data.Count", "Primary.Exceedance.Count", "Secondary.Exceedance.Count", 
+"Certification.Indicator", "Num.Obs.Below.MDL", "Arithmetic.Mean", 
+"Arithmetic.Standard.Dev", "First.Max.Value", "First.Max.DateTime", 
+"Sec.Max.Value", "Sec.Max.DateTime", "Third.Max.Value", "Third.Max.DateTime", 
+"Fourth.Max.Value", "Fourth.Max.DateTime", "First.Max.Non.Overlapping.Value", 
+"First.NO.Max.DateTime", "Sec.Max.Non.Overlapping.Value", "Sec.NO.Max.DateTime", 
+"NineNineth.Percentile", "NineEigth.Percentile", "NineFifth.Percentile", "Nintieth.Percentile", 
+"SevenFifth.Percentile", "Fiftith.Percentile", "Tenth.Percentile", "Local.Site.Name", 
+"Address", "State.Name", "County.Name", "City.Name", "CBSA.Name", 
+"Date.of.Last.Change")
+head(air)
+```
+
+
+```{r}
+glimpse(air)
+```
+
+
+```{r warning=F}
+skim(air)
+```
+
+```{r}
+aqs_monitors <- read.csv("aqs_monitors.csv", stringsAsFactors = T)
+head(aqs_monitors)
+```
+
+```{r warning=F}
+skim(aqs_monitors)
+```
+
+
+```{r}
+aqs_sites <- read.csv("aqs_sites.csv", stringsAsFactors = T)
+head(aqs_sites)
+```
+
+
+```{r warning=F}
+skim(aqs_sites)
+```
+
+## Praproses Data
+
+Filter polutan udara untuk `NO2 1-hour 2010`
+
+```{r}
+air_no1h <- air[which(air$Pollutant.Standard=="NO2 1-hour 2010" & air$State.Name != "Hawaii"),]
+head(air_no1h)
+```
+
+Tampilkan ke dalam peta `leaflet`
+
+```{r}
+popup <- paste0("<b>", air_no1h$City.Name, "</b><br>",
+                "Pollutant Standard: ", air_no1h$Pollutant.Standard)
+
+leaflet(data = air_no1h, width = "100%") %>% 
+  addTiles() %>% 
+  addMarkers(lng = ~Longitude,
+             lat = ~Latitude, 
+             popup = popup, 
+             clusterOptions = markerClusterOptions())
+```
+
+```{r}
+# transform Data Frame into SpatialPointsDataFrame
+usa_no1h <- air_no1h
+coordinates(usa_no1h) <- c('Longitude', 'Latitude')
+
+# find point pairs with equal spatial coordinates then remove
+usa_no1h_zd <- zerodist(usa_no1h)
+usa_no1h_zd
+```
+
+```{r}
+usa_no1h <- usa_no1h[-usa_no1h_zd[,2],] 
+crs(usa_no1h) <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+```
+
+
+Load `SpatialPolygonsDataFrame` dari peta US 
+
+```{r}
+# States <- getData("GADM", country = "United States", level = 1)
+us_mainland_poly <- States[States$NAME_1 != "Alaska" & States$NAME_1 != "Hawaii",]
+```
+
+Bangkitkan data sample sebaran titik dari peta US
+
+```{r}
+us_map <- map_data('usa')
+us_points <- us_map
+coordinates(us_points) <- c('long', 'lat')
+plot(us_points)
+```
+
+```{r}
+x.range <- as.integer(range(us_map$long))
+y.range <- as.integer(range(us_map$lat))
+
+x <- seq(x.range[1], x.range[2], by = 0.1)
+y <- seq(y.range[1], y.range[2], by = 0.1)
+
+grd <- expand.grid(x = x,y = y)
+coordinates(grd) <- ~x + y
+gridded(grd) <- TRUE
+# fullgrid(grd) <- TRUE
+plot(grd)
+```
+
+
+```{r}
+rtemp <- crop(grd, extent(us_mainland_poly)) ### crop to the extent
+crs(rtemp) <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+us_mainland_grd <- rtemp[us_mainland_poly, ]
+plot(us_mainland_grd)
+```
+
+Samakan semua point boundary extent dengan `us_mainland_poly`
+
+```{r}
+usa_no1h@bbox <- us_mainland_poly@bbox
+us_mainland_grd@bbox <- us_mainland_poly@bbox
+```
+
+
+```{r}
+tm_shape(us_mainland_poly) + tm_polygons() +
+  tm_shape(usa_no1h) +
+  tm_dots(col="NineNineth.Percentile", palette = "RdBu", auto.palette.mapping = FALSE, title="Sampled NO2 Pollutant", size=0.7) +
+  tm_text("NineNineth.Percentile", just="left", xmod=.5, size = 0.7) +
+  tm_legend(legend.outside=TRUE)
+```
+
+
+## Ordinary Kriging
+
+### Variogram
+
+```{r}
+v <- variogram(NineNineth.Percentile ~ 1, data=usa_no1h)
+v
+plot(v, plot.numbers=T)
+```
+
+```{r}
+vm <- vgm(psill = 190, model = "Sph", range=200, nugget = 46)
+vm
+plot(v, pl = T, model = vm)
+```
+
+
+### Fitting variogram
+
+```{r}
+vmfit <- fit.variogram(v, vm)
+vmfit
+plot(v, pl = T, model = vmfit)
+```
+
+
+```{r}
+vmfit_no_par <- fit.variogram(v, model = gstat::vgm("Sph"))
+vmfit_no_par
+plot(v, pl = T, model = vmfit_no_par)
+```
+
+
+### Predict all grid points
+
+```{r warning=FALSE}
+results_krig <- krige(NineNineth.Percentile ~ 1, locations = usa_no1h, newdata = us_mainland_grd, model = vmfit)
+```
+
+```{r}
+str(results_krig)
+```
+
+
+```{r}
+spplot(results_krig, "var1.pred", asp=1, main="OK prediction, NO2")
+```
+
+```{r warning=FALSE}
+results_krig_no_par <- krige(NineNineth.Percentile ~ 1,  locations = usa_no1h, newdata = us_mainland_grd, model = vmfit_no_par)
+str(results_krig_no_par)
+spplot(results_krig_no_par, "var1.pred", asp=1, main="OK prediction, NO2")
+```
+
+
+```{r}
+r <- raster(results_krig)
+r.m <- mask(r, us_mainland_poly)
+tm_shape(r.m) + 
+  tm_raster(n=10, palette="RdBu", auto.palette.mapping=FALSE, title="Predicted NO2") +
+  tm_shape(usa_no1h) + tm_dots(size=0.2) +
+  tm_legend(legend.outside=TRUE)
+```
+
+### Evaluasi model
+
+
+```{r}
+usa_no1h.okcv <- krige.cv(NineNineth.Percentile ~ 1, usa_no1h, us_mainland_grd, model = vmfit)
+RMSEKrig  <- sqrt(sum(usa_no1h.okcv$residual^2)/length(usa_no1h.okcv$residual))
+RMSEKrig 
+```
+
+```{r}
+usa_no1h.okcv2 <- krige.cv(NineNineth.Percentile ~ 1, usa_no1h, us_mainland_grd, model = vmfit_no_par)
+RMSE.ok2 <- sqrt(sum(usa_no1h.okcv2$residual^2)/length(usa_no1h.okcv2$residual))
+RMSE.ok2
+```
+
+
+## Inverse Distance Weighting
+
+```{r}
+idw_no2 <- krige(NineNineth.Percentile ~ 1, usa_no1h, us_mainland_grd, NULL)
+# idw_no2 <- idw(NineNineth.Percentile ~ 1, usa_no1h, us_mainland_grd, idp=2.0)
+str(idw_no2)
+```
+
+```{r}
+spplot(idw_no2["var1.pred"], main ="NO2 IDW", contour=TRUE)
+```
+
+```{r}
+idw1cv <- krige.cv(NineNineth.Percentile ~ 1, usa_no1h, set = list(idp = .5), nmax=7)
+RMSE.id <- sqrt(sum(idw1cv$residual^2)/length(idw1cv$residual))
+RMSE.id
+```
+
+```{r eval=FALSE}
+# Leave-one-out validation routine
+IDW.out <- vector(length = length(usa_no1h))
+for (i in 1:length(usa_no1h)) {
+  IDW.out[i] <- idw(NineNineth.Percentile ~ 1, usa_no1h[-i,], usa_no1h[i,], idp=2.0)$var1.pred
+}
+```
+
+
+```{r}
+# Plot the differences
+OP <- par(pty="s", mar=c(4,3,0,0))
+  plot(IDW.out ~ usa_no1h$NineNineth.Percentile, asp=1, xlab="Observed", ylab="Predicted", pch=16, col=rgb(0,0,0,0.5))
+  abline(lm(IDW.out ~ usa_no1h$NineNineth.Percentile), col="red", lw=2,lty=2)
+  abline(0,1)
+par(OP)
+```
+
+```{r}
+RMSEIDW <- sqrt( sum((IDW.out - usa_no1h$NineNineth.Percentile)^2) / length(usa_no1h))
+```
+
+
+## Thiessen Polygons
+
+```{r}
+thiessen_no2 <- krige(NineNineth.Percentile ~ 1, usa_no1h, us_mainland_grd, nmax=1)
+str(thiessen_no2)
+```
+
+```{r}
+image(thiessen_no2["var1.pred"])
+points(usa_no1h, pch = "+", cex = 0.65)
+```
+
+```{r}
+image(thiessen_no2["var1.pred"])
+points(usa_no1h, pch = "+", cex = 0.65)
+cc = coordinates(usa_no1h)
+plot(voronoi.mosaic(cc[, 1], cc[, 2]), do.points = FALSE, add = TRUE)
+```
+
+
+```{r}
+tes <- krige.cv(NineNineth.Percentile ~ 1, usa_no1h, nmax=1)
+RMSEtes <- sqrt(sum(tes$residual^2)/length(tes$residual))
+RMSEtes
+```
+
+```{r eval=FALSE}
+# Leave-one-out validation routine
+TH.out <- vector(length = length(usa_no1h))
+for (i in 1:length(usa_no1h)) {
+  TH.out[i] <- idw(NineNineth.Percentile ~ 1, usa_no1h[-i,], usa_no1h[i,], nmax=1)$var1.pred
+}
+```
+
+
+```{r}
+# Plot the differences
+OP <- par(pty="s", mar=c(4,3,0,0))
+  plot(TH.out ~ usa_no1h$NineNineth.Percentile, asp=1, xlab="Observed", ylab="Predicted", pch=16, col=rgb(0,0,0,0.5))
+  abline(lm(TH.out ~ usa_no1h$NineNineth.Percentile), col="red", lw=2,lty=2)
+  abline(0,1)
+par(OP)
+```
+
+```{r}
+RMSETH <- sqrt( sum((TH.out - usa_no1h$NineNineth.Percentile)^2) / length(usa_no1h))
+```
+
+## Perbandingan Akurasi Model Interpolasi
+
+```{r}
+data.frame(
+  RMSE_Thiessen = RMSETH, 
+  RMSE_IDW = RMSEIDW ,
+  RMSE_Ord_Kriging = RMSEKrig
+)
+```
+
+

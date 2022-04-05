@@ -1,0 +1,200 @@
+---
+title: "Riset Operasi Spasial"
+output: html_notebook
+---
+
+```{r}
+library(linprog)
+```
+
+Maximize $f=3x+2y$ subject to the following constraints:
+
+- $x+2y\le30$
+- $5x+y\le60$
+- $x\ge0; y\ge0$
+
+```{r}
+c = c(5,10,8)
+b = c(2000,1700,1300,1500)
+A = rbind(c(30,50,40), c(25,60,30),c(60,50,0),c(40,0,40))
+res = solveLP(c, b, A, maximum=TRUE)
+print(res)
+```
+
+```{r}
+c = c(250,300,500)
+b = c(130,170,52,25,130,55)
+A = rbind(c(4,2,6), c(3,4,9),c(1,2,4),c(1,0,0),c(0,1,0),c(0,0,1))
+res = solveLP(c, b, A, maximum=TRUE)
+print(res)
+```
+
+
+```{r}
+cvec <- c(1800, 600, 600)  # gross margins
+names(cvec) <- c("Cows","Bulls","Pigs")
+
+## Constraints (quasi-fix factors)
+bvec <- c(40, 90, 2500)  # endowment
+names(bvec) <- c("Land","Stable","Labor")
+
+## Needs of Production activities
+Amat <- rbind( c(  0.7,   0.35,   0 ),
+               c(  1.5,   1,      3 ),
+               c( 50,    12.5,   20 ) )
+
+## Maximize the gross margin
+solveLP( cvec, bvec, Amat, TRUE )
+```
+
+
+```{r}
+## example 1.1.3 of Witte, Deppe and Born (1975)
+## Two types of Feed
+cvec <- c(2.5, 2 )  # prices of feed
+names(cvec) <- c("Feed1","Feed2")
+
+## Constraints (minimum (<0) and maximum (>0) contents)
+bvec <- c(-10, -1.5, 12)
+names(bvec) <- c("Protein","Fat","Fibre")
+
+## Matrix A
+Amat <- rbind( c( -1.6,  -2.4 ),
+               c( -0.5,  -0.2 ),
+               c(  2.0,   2.0 ) )
+
+## Minimize the cost
+solveLP( cvec, bvec, Amat )
+```
+
+
+```{r}
+# the same optimisation using argument const.dir
+solveLP( cvec, abs( bvec ), abs( Amat ), const.dir = c( ">=", ">=", "<=" ) )
+```
+
+
+```{r}
+## There are also several other ways to put the data into the arrays, e.g.:
+bvec <- c( Protein = -10.0,
+           Fat     =  -1.5,
+           Fibre   =  12.0 )
+cvec <- c( Feed1 = 2.5,
+           Feed2 = 2.0 )
+Amat <- matrix( 0, length(bvec), length(cvec) )
+rownames(Amat) <- names(bvec)
+colnames(Amat) <- names(cvec)
+Amat[ "Protein", "Feed1" ] <-  -1.6
+Amat[ "Fat",     "Feed1" ] <-  -0.5
+Amat[ "Fibre",   "Feed1" ] <-   2.0
+Amat[ "Protein", "Feed2" ] <-  -2.4
+Amat[ "Fat",     "Feed2" ] <-  -0.2
+Amat[ "Fibre",   "Feed2" ] <-   2.0
+solveLP( cvec, bvec, Amat )
+```
+
+
+
+* Maximize/minimize $\hat C^T \hat X$
+* Under the constraint $\hat A \hat X \leq \hat B$
+* And the constraint $\hat X \geq 0$
+
+>A company produces two models of chairs: 4P and 3P. The model 4P needs 4 legs, 1 seat and 1 back. On the other hand, the model 3P needs 3 legs and 1 seat. The company has a initial stock of 200 legs, 500 seats and 100 backs. If the company needs more legs, seats and backs, it can buy standard wood blocks, whose cost is 80 euro per block. The company can produce 10 seats, 20 legs and 2 backs from a standard wood block. The cost of producing the model 4P is 30 euro/chair, meanwhile the cost of the model 3P is 40 euro/chair. Finally, the company informs that the minimum number of chairs to produce is 1000 units per month. Define a linear programming model, which minimizes the total cost (the production costs of the two chairs, plus the buying of new wood blocks).
+
+Define the following variables
+
+- $x_{4p}$ is the number of 4P chairs to be produced.
+- $x_{3p}$ is the number of 3P chairs to be produced.
+- $x_w$ is the number of wood blocks to be bought.
+
+Now we can define $\hat X = \begin{pmatrix} x_{4p} \\ x_{3p}  \\  x_w \end{pmatrix}$ as the decision variable vector. Note that it must be $\hat X \geq 0$.
+
+We would like to minimize the total cost so we must set our objective function as follows
+
+$$cost(x_{4p}, x_{3p}, x_w) = 30 x_{4p} + 40 x_{3p} + 80 x_w = MIN(cost) $$
+
+which means that $\hat C = \begin{pmatrix} 30 \\ 40  \\  80 \end{pmatrix}$.
+
+The constraints can be set in the following way
+
+1. For the seats $$ x_{4p} + x_{3p} \leq 500 + 10 x_w $$
+2. For the legs $$ 4 x_{4p} + 3 x_{3p} \leq 200 + 20 x_w $$
+3. For the backs $$ x_{4p} \leq 100 + 2 x_w $$
+4. Minimum number of chairs produced $$ x_{4p} + x_{3p} \geq 1000 $$
+
+We can now define the coefficient matrix $A = \begin{pmatrix} 1 & 1 & -10 & \\  4 & 3 & -20 & \\  1 & 0 & -2 & \\  – 1 & – 1 & 0 &  \end{pmatrix} $ and $B = \begin{pmatrix} 500 \\ 200 \\ 100 \\ -1000 \end{pmatrix}$.
+
+```{r}
+require(lpSolve)
+
+## Set the coefficients of the decision variables -> C
+C <- c(30, 40, 80)
+
+# Create constraint martix B
+A <- matrix(c(1, 1, -10,
+              4, 3, -20,
+              1, 0, -2,
+              1, 1, 0), nrow=4, byrow=TRUE)
+
+# Right hand side for the constraints
+B <- c(500, 200, 100, 1000)
+
+# Direction of the constraints
+constranints_direction  <- c("<=", "<=", "<=", ">=")
+
+# Find the optimal solution
+optimum <-  lp(direction="min",
+               objective.in = C,
+               const.mat = A,
+               const.dir = constranints_direction,
+               const.rhs = B,
+               all.int = T)
+
+# Print status: 0 = success, 2 = no feasible solution
+optimum$status
+```
+
+```{r}
+best_sol <- optimum$solution
+names(best_sol) <- c("x_4p", "x_3p", "x_w") 
+best_sol
+```
+
+```{r}
+paste("Total cost: ", optimum$objval, sep="")
+```
+
+
+```{r}
+C <- c(250, 300, 500)
+
+# Create constraint martix B
+A <- matrix(c(4, 2, 6,
+              3, 4, 9,
+              1, 2, 4,
+              -1, 0, 0,
+              0,-1, 0,
+              0, 0, -1), nrow=6, byrow=TRUE)
+
+# Right hand side for the constraints
+B <- c(130, 170, 52, 25, 130, 55)
+
+# Direction of the constraints
+constranints_direction  <- c("<=", "<=", "<=",  "<=",  "<=",  "<=")
+
+# Find the optimal solution
+optimum <-  lp(direction="max",
+               objective.in = C,
+               const.mat = A,
+               const.dir = constranints_direction,
+               const.rhs = B,
+               all.int = T)
+
+# Print status: 0 = success, 2 = no feasible solution
+optimum$status
+```
+
+```{r}
+optimum$solution
+```
+

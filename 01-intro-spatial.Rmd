@@ -1,0 +1,119 @@
+# Data Spasial di R
+
+## Package
+
+`sp` dan `gstat`
+
+## Meuse dataset
+
+```{r}
+data(meuse)
+str(meuse)
+```
+### Plot data
+
+```{r}
+coordinates(meuse) <- c("x", "y")
+plot(meuse)
+title("points")
+```
+
+```{r}
+data(meuse.riv)
+meuse.1st <- list(Polygons(list(Polygon(meuse.riv)), "meuse.riv"))
+meuse.sr <- SpatialPolygons(meuse.1st)
+plot(meuse.sr, col = "grey")
+title("polygons")
+```
+
+```{r}
+data(meuse.grid)
+coordinates(meuse.grid) <- c("x", "y")
+meuse.grid <- as(meuse.grid, "SpatialPixels")
+image(meuse.grid, col = "grey")
+title("grid")
+```
+
+```{r}
+image(meuse.grid, col = "lightgrey")
+plot(meuse.sr, col = "grey", add = TRUE)
+plot(meuse,add = TRUE)
+```
+
+```{r}
+f <- system.file("external/test.grd", package="raster")
+library(raster)
+r <- raster(f)
+plot(r)
+```
+
+```{r}
+datapop <- read.csv('http://bit.ly/Popgrowth2000', header=T, sep=',')
+```
+
+```{r}
+coordinates(datapop) <- c("Longitude","Latitude")
+plot(datapop)
+```
+
+```{r}
+size <- datapop$PopGrowth_2000/sum(datapop$PopGrowth_2000)
+plot(datapop, pch=20, col="steelblue", cex=size*100)
+```
+
+```{r}
+library(rworldmap)
+data(package="rworldmap")
+data(countriesCoarse,envir=environment(),package="rworldmap")
+```
+
+```{r}
+plot(countriesCoarse)
+plot(datapop,add=T, pch=20)
+```
+
+
+```{r}
+r <- raster(datapop)
+res(r)<-c(5,5)
+nc <- rasterize(coordinates(datapop), r, fun=mean, background=NA)
+plot(nc)
+plot(countriesCoarse, add=TRUE)
+```
+
+```{r}
+states<-as.data.frame(state.x77)
+head(states)
+```
+
+```{r}
+states$region <- tolower(rownames(states))
+states_map <- map_data("state")
+fact_join <- left_join(states_map, states, by = "region")
+ggplot(fact_join, aes(long, lat, group = group))+
+  geom_polygon(aes(fill = Population), color = "white")+
+  scale_fill_viridis_c(option = "C")+
+  theme_classic()
+```
+
+```{r}
+fact_join$`Life Exp` <- as.numeric(fact_join$`Life Exp`)
+ggplot(fact_join, aes(long, lat, group = group))+
+geom_polygon(aes(fill = `Life Exp`), color = "white")+
+scale_fill_viridis_c(option = "C")+
+theme_classic()
+```
+
+```{r}
+sumatera <- readOGR(dsn='E:/1_My_Study/STA581/Praktikum/P3/Admin/Sumatera.shp', layer='Sumatera')
+```
+
+```{r}
+plot(sumatera)
+text(sumatera, 'ADM2_EN', cex=0.5)
+```
+
+```{r}
+plot(sumatera, col='red')
+```
+

@@ -1,0 +1,196 @@
+# Data Spasial di R
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sp)
+library(gstat)
+library(spatstat)
+```
+
+## Ants
+
+```{r}
+data(ants)
+ants
+```
+
+```{r}
+plot(ants)
+```
+
+```{r}
+plot(split(ants))
+```
+
+## Metode Kuadran
+
+```{r}
+quad1 <- quadratcount(split(ants))
+plot(quad1)
+```
+
+```{r}
+catag<-quad1[[1]]
+mess<-quad1[[2]]
+Obs<-matrix(NA,2,2)
+rownames(Obs)<-c("A","0")
+colnames(Obs)<-c("B","0")
+Obs[1,1]<-sum(((catag>0)+(mess>0))==2) #ab
+Obs[2,1]<-sum(((catag>0)-(mess>0))==1) #a0
+Obs[1,2]<-sum(((catag>0)-(mess>0))==-1) #0b
+Obs[2,2]<-sum(((catag>0)+(mess>0))==0) #00
+
+# manual
+Tes<-chisq.test(Obs)
+chisqhitung<-sum((Obs-Tes$expected)^2/Tes$expected)
+
+# fungsi
+chistabel<-qchisq(0.05,df=1,lower.tail=F)
+p_valuechi<-pchisq(chisqhitung,1,lower.tail=F)
+
+chisq.test(Obs, correct = F)
+```
+
+## Metode K-function
+
+```{r}
+unique(ants$marks)
+```
+
+```{r}
+Kh <- Kdot(ants, "Messor")
+plot(Kh)
+```
+
+```{r}
+f1 <- function(X) { marks(X) == "Messor"}
+f2 <- function(X) { marks(X) == "Cataglyphis"}
+K <- Kmulti(ants,f1,f2)
+plot(K)
+```
+
+
+```{r}
+K01 <- Kcross(ants, "Messor", "Cataglyphis")
+plot(K01)
+```
+
+
+```{r}
+plot(envelope(ants, Kcross, i="Messor", j="Cataglyphis", nsim=99, fix.n=T, fix.marks=T))
+```
+
+```{r}
+plot(envelope(ants, Kdot, i="Messor", j="Cataglyphis", nsim=99, fix.n=T, fix.marks=T))
+```
+
+```{r}
+plot(envelope(ants, Kmulti, I=f1, J=f2, nsim=99, fix.n=T, fix.marks=T))
+```
+
+```{r}
+mad.test(ants, Kcross, i="Messor", j="Cataglyphis", nsim=99, fix.n=T, fix.marks=T)
+```
+
+```{r}
+data("lansing")
+lansing
+```
+
+```{r}
+summary(lansing)
+```
+
+```{r}
+plot(lansing)
+```
+
+```{r}
+plot(split(lansing))
+```
+
+```{r}
+plot(density(split(lansing)), ribbon = F)
+```
+
+```{r}
+hick <- split(lansing)$hickory
+plot(hick)
+```
+
+## Metode Kuadran
+
+```{r}
+plot(quadratcount(split(lansing)))
+```
+
+## K-function
+
+```{r}
+Kh. <- Kdot(lansing,"hickory")
+plot(Kh.)
+```
+
+```{r}
+data("bramblecanes")
+set.seed(123)
+mad.test(bramblecanes, Kdot, nsim=99, i="2", alternative = "greater")
+```
+
+
+```{r}
+plot(bramblecanes)
+```
+
+```{r}
+data("amacrine")
+summary(amacrine)
+```
+
+```{r}
+marks(amacrine)
+```
+
+
+
+```{r}
+quad1 <- quadratcount(split(amacrine), nx = 6, ny = 6)
+m1<-quad1[[1]]
+m2<-quad1[[2]]
+Obs<-matrix(NA,2,2)
+rownames(Obs)<-c("A","0")
+colnames(Obs)<-c("B","0")
+Obs[1,1]<-sum(((m1>0)+(m2>0))==2) #ab
+Obs[2,1]<-sum(((m1>0)-(m2>0))==1) #a0
+Obs[1,2]<-sum(((m1>0)-(m2>0))==-1) #0b
+Obs[2,2]<-sum(((m1>0)+(m2>0))==0) #00
+chisq.test(Obs, correct = F)
+```
+
+
+```{r}
+
+# manual
+Tes<-chisq.test(Obs)
+chisqhitung<-sum((Obs-Tes$expected)^2/Tes$expected)
+
+# fungsi
+chistabel<-qchisq(0.05,df=1,lower.tail=F)
+p_valuechi<-pchisq(chisqhitung,1,lower.tail=F)
+
+chisq.test(Obs, correct = F)
+```
+
+
+
+```{r}
+data("bramblecanes")
+K02 <- envelope(bramblecanes, Kcross, nsim=99, i="2", j="0")
+plot(K02)
+```
+
+```{r}
+plot(bramblecanes)
+plot(split(bramblecanes))
+```
+
