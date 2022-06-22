@@ -1,0 +1,129 @@
+---
+title: "Praktikum 10 Regresi Spasial"
+author: "Alfa Nugraha P.^[Mahasiswa Pascasarjana Statistika dan Sains Data, IPB]"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    theme: spacelab
+    highlight: zenburn
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: no
+    highlight: zenburn
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(openxlsx)
+library(spdep)
+library(rgdal)
+library(raster)
+library(nortest)
+library(RColorBrewer)
+library(car)
+library(DescTools)
+library(lmtest)
+```
+
+
+Studi Kasus: Dampak IPM terhadap APS untuk Usia 1-12 Tahun 2015 di Jawa Barat
+
+https://jabar.bps.go.id/indicator/26/123/3/indeks-pembangunan-manusia.html
+
+Y : Indeks Pembangunan Manusia Tahun 2015
+
+X : Angka Partisipasi Sekolah untuk Usia 1-12 Tahun 2015
+
+```{r}
+data.jabar <- read.xlsx("Jabar.xlsx")
+str(data.jabar)
+```
+
+## Eksplorasi Data
+
+```{r}
+jabar2 <- readOGR("petaJabar2/Jabar2.shp", layer="Jabar2")
+```
+
+```{r}
+jabar2@data$IPM15 <- data.jabar$IPM15
+my.palette.1<-brewer.pal(n=9,name="YlOrRd")
+
+label <- data.jabar$KABKOT
+text_jbr <- list("sp.text", coordinates(jabar2), label, cex=0.8, col="black")
+spplot(jabar2, zcol="IPM15", cuts=8, col.regions=my.palette.1, cex=c(0.3, 1, 0.3), main="IPB Jawa Barat 2015", sp.layout=list(text_jbr))
+```
+
+
+```{r}
+plot(data.jabar$APS.USIA15, data.jabar$IPM15,
+  xlab="APS umur 7-12 Thn.2015", 
+  ylab="IPM Thn.2015",
+  pch=20, col="orange", cex=2)
+
+reg.klasik <- lm(IPM15 ~ APS.USIA15, data = data.jabar)
+lines.lm(reg.klasik, col=2, add=T)
+```
+## Moran Test
+
+```{r}
+w <- poly2nb(jabar2)
+ww <- nb2listw(w)
+moran(data.jabar$IPM15, ww, n=length(ww$neighbours), S0=Szero(ww))
+```
+
+
+```{r}
+moran.test(data.jabar$IPM15, ww, randomisation=T, alternative="greater")
+```
+
+```{r}
+moran.plot(data.jabar$IPM15, ww, labels=data.jabar$KABKOT, xlim=c(50, 85 ))
+```
+
+## Regresi Klasik
+
+```{r}
+ols15 <- lm(IPM15 ~ APS.USIA15, data = data.jabar)
+err.ols15 <- residuals(ols15)
+summary(ols15)
+```
+
+## Model Diagnostics
+
+### Uji Normalitas
+
+```{r}
+ad.test(err.ols15)
+hist(err.ols15)
+```
+
+```{r}
+qqnorm(err.ols15, datax=T)
+qqline(rnorm(length(err.ols15), mean(err.ols15), sd(err.ols15)), datax=T, col="red")
+```
+
+### Heteroskedastisitas
+
+```{r}
+bptest(reg.klasik)
+```
+
+### Uji kebebasan
+
+```{r}
+lm.morantest(ols15, ww, alternative="two.sided")
+```
+
+### Uji LM
+
+```{r}
+LM<-lm.LMtests(ols15, nb2listw(w, style="W"), test=c("LMerr", "LMlag","RLMerr","RLMlag","SARMA"))
+summary(LM)
+```
+
+
+

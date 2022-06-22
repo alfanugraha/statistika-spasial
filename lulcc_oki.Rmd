@@ -1,0 +1,342 @@
+---
+title: "LULCC"
+output: html_notebook
+---
+
+```{r}
+library(lulcc)
+library(raster)
+library(cowplot)
+```
+
+
+```{r}
+lc05 <- raster("D:/ICRAF_Project/IDH/Ogan_Komering_Ilir/oki_2005_rcl2.tif")
+lc10 <- raster("D:/ICRAF_Project/IDH/Ogan_Komering_Ilir/oki_2010_rcl2.tif")
+lc15 <- raster("D:/ICRAF_Project/IDH/Ogan_Komering_Ilir/oki_2015_rcl2.tif")
+d_city <- raster("D:/ICRAF_Project/IDH/Ogan_Komering_Ilir/oki_factor_d_city.tif")
+podes <- raster("D:/ICRAF_Project/IDH/Ogan_Komering_Ilir/oki_factor_podes.tif")
+d_crop <- raster("D:/ICRAF_Project/IDH/Ogan_Komering_Ilir/oki_d_rice.tif")
+d_forest <- raster("D:/ICRAF_Project/IDH/Ogan_Komering_Ilir/oki_d_forest.tif")
+oki <- list(lu_oki_2005=lc05, lu_oki_2010=lc10, lu_oki_2015=lc15, 
+            ef_001=d_forest, ef_002=d_crop, ef_003=d_city, ef_004=podes)
+```
+
+
+```{r}
+str(oki$lu_oki_2005)
+```
+
+
+```{r}
+obsOki <- ObsLulcRasterStack(x=oki,
+                          pattern="lu",
+                          categories=c(1, 2, 3, 4, 5, 6),
+                          labels=c("Hutan", "Pertanian", "Rerumputan", "LahanBasah", "Pemukiman", "Lainnya"),
+                          t=c(0, 5, 10))
+obsOki
+plot(obsOki)
+```
+
+```{r}
+crossTabulate(obsOki, times=c(5,10))
+```
+
+```{r}
+crossTabulate(obsOki, times=c(0,10))
+```
+
+```{r}
+efOki <- ExpVarRasterList(x=oki, pattern="ef")
+efOki
+```
+
+To fit predictive models we first divide the study region into training and testing partitions. The partition function returns a list with cell numbers for each partition:
+
+```{r}
+part <- partition(x=oki[[1]], size=0.1, spatial=TRUE)
+part
+```
+
+We then extract cell values for the training and testing partitions.
+
+```{r}
+# extract training data
+train.data <- getPredictiveModelInputData(obs=obsOki,
+                                          ef=efOki,
+                                          cells=part[["train"]],
+                                          t=0)
+
+test.data <- getPredictiveModelInputData(obs=obsOki,
+                                         ef=efOki,
+                                         cells=part[["test"]])
+```
+
+```{r}
+head(train.data)
+```
+
+
+```{r}
+head(test.data)
+```
+
+
+Predictive models are represented by the PredictiveModelList class. For comparison, we create a PredictiveModelList object for each type of predictive model:
+
+```{r}
+# fit models (note that a predictive model is required for each land use category)
+forms <- list(LahanBasah~ef_001+ef_002,
+              Hutan~ef_001+ef_002+ef_004,
+              Pertanian~ef_001+ef_002+ef_004,
+              Rerumputan~ef_001+ef_002+ef_003+ef_004,
+              Pemukiman~ef_002+ef_003+ef_004,
+              Lainnya~ef_001+ef_002+ef_003+ef_004)
+```
+
+
+```{r}
+# generalized linear model models
+glm.models <- glmModels(formula=forms, family=binomial, data=train.data, obs=obsOki)
+glm.models
+```
+
+```{r}
+# recursive partitioning and regression tree models
+rpart.models <- rpartModels(formula=forms, data=train.data, obs=obsOki)
+rpart.models
+```
+
+
+```{r}
+# random forest models (WARNING: takes a long time!)
+rf.models <- randomForestModels(formula=forms, data=train.data, obs=obsOki, na.action=na.omit)
+rf.models
+```
+
+We can then use the fitted models to predict over the full data set and produce the probability surfaces for each fitted model:
+
+```{r}
+all.data <- as.data.frame(x=efOki, obs=obsOki, cells=part[["all"]])
+
+# GLM
+probmaps <- predict(object=glm.models, newdata=all.data, data.frame=TRUE)
+points <- rasterToPoints(obsOki[[1]], spatial=TRUE)
+probmaps <- SpatialPointsDataFrame(points, probmaps)
+
+probmaps <- rasterize(x=probmaps, y=obsOki[[1]], field=names(probmaps))
+rasterVis::levelplot(probmaps)
+```
+
+Model performance is assessed using the receiver operator characteristic provided by the ROCR package. lulcc includes classes Prediction and Performance which extend the native ROCR classes to contain multiple prediction and performance objects. The procedure to obtain these objects and assess performance is as follows:
+
+
+```{r}
+glm.pred <- PredictionList(models=glm.models, newdata=na.omit(test.data))
+glm.perf <- PerformanceList(pred=glm.pred, measure="rch")
+rpart.pred <- PredictionList(models=rpart.models, newdata=na.omit(test.data))
+rpart.perf <- PerformanceList(pred=rpart.pred, measure="rch")
+rf.pred <- PredictionList(models=rf.models, newdata=na.omit(test.data))
+rf.perf <- PerformanceList(pred=rf.pred, measure="rch")
+plot(list(glm=glm.perf, rpart=rpart.perf, rf=rf.perf))
+```
+
+Another use of ROC analysis is to assess how well the models predict the cells in which gain occurs between two time points. This is only possible if a second observed land use map is available for a subsequent time point. Here we perform this type of analysis for the gain of built between 1985 and 1991. First, we create a data partition in which cells not candidate for gain (cells belonging to built in 1985) are eliminated. We then assess the ability of the various predictive models to predict the gain of built in this partition:
+
+
+```{r}
+part <- rasterToPoints (obs[[1]], fun=function(x) x != 2, spatial=TRUE)
+test.data<- getPredictiveModelInputData(obs=obs, ef=ef, cells=part, t=6)
+glm.pred <- PredictionList(models=glm.models[[2]], newdata=test.data)
+glm.perf <- PerformanceList(pred=glm.pred, measure="rch")
+plot(list(glm=glm.perf))
+```
+
+## Allocation
+
+Spatially explicit land use change models are usually driven by non-spatial estimates of land use area for each timestep in the simulation. While many complex methods have been devised, in lulcc we simply provide a method for linear extrapolation of land use change, which relies on there being at least two observed land use maps:
+
+```{r}
+# obtain demand scenario
+dmd <- approxExtrapDemand(obs=obsOki, tout=0:10)
+dmd
+```
+
+We then use a filter defined as a matrix within the NeighbRasterStack function to gather neighbor data from the land use change data.
+
+```{r}
+w <- matrix(data=1, nrow=3, ncol=3)
+nb <- NeighbRasterStack(x=obsOki[[1]], weights=w, categories=c(1,2,3,4,5,6))
+plot(nb)
+```
+
+The culmination of the modelling process is to simulate the location of land use change. lulcc provides a routine based on the CLUE-S model (Verburg et al., 2002) and a novel stochastic allocation procedure (with option for using the ordered method). The first step is to combine the various model inputs to ensure they are compatible:
+
+```{r}
+clues.rules <- matrix(data=1, nrow=6, ncol=6)
+clues.parms <- list(jitter.f=0.0002,
+                    scale.f=0.000001,
+                    max.iter=1000,
+                    max.diff=50,
+                    ave.diff=50)
+clues.model <- CluesModel(obs=obsOki,
+                          ef=efOki,
+                          models=glm.models,
+                          time=0:10,
+                          demand=dmd,
+                          elas=c(0.2,0.2,0.2,0.2,0.2,0.2),
+                          rules=clues.rules,
+                          params=clues.parms)
+ordered.model <- OrderedModel(obs=obsOki,
+                              ef=efOki,
+                              models=glm.models,
+                              time=0:10,
+                              demand=dmd,
+                              order=c(6,5,3,2,1,4))
+ordered.model
+```
+
+```{r}
+clues.model.rpart <- CluesModel(obs=obsOki,
+                          ef=efOki,
+                          models=rpart.models,
+                          time=0:10,
+                          demand=dmd,
+                          elas=c(0.2,0.2,0.2,0.2,0.2,0.2),
+                          rules=clues.rules,
+                          params=clues.parms)
+ordered.model.rpart <- OrderedModel(obs=obsOki,
+                              ef=efOki,
+                              models=rpart.models,
+                              time=0:10,
+                              demand=dmd,
+                              order=c(6,5,3,2,1,4))
+ordered.model.rpart
+```
+
+```{r}
+clues.model.rf <- CluesModel(obs=obsOki,
+                          ef=efOki,
+                          models=rf.models,
+                          time=0:10,
+                          demand=dmd,
+                          elas=c(0.2,0.2,0.2,0.2,0.2,0.2),
+                          rules=clues.rules,
+                          params=clues.parms)
+ordered.model.rf <- OrderedModel(obs=obsOki,
+                              ef=efOki,
+                              models=rf.models,
+                              time=0:10,
+                              demand=dmd,
+                              order=c(6,5,3,2,1,4))
+ordered.model.rf
+```
+
+Then, finally, we can perform allocation:
+
+```{r}
+clues.model <- allocate(clues.model)
+ordered.model <- allocate(ordered.model, stochastic=TRUE)
+```
+
+```{r}
+plot(clues.model)
+plot(ordered.model)
+```
+
+
+```{r}
+clues.model.rpart <- allocate(clues.model.rpart)
+ordered.model.rpart <- allocate(ordered.model.rpart, stochastic=TRUE)
+```
+
+```{r}
+plot(clues.model.rpart)
+plot(ordered.model.rpart)
+```
+
+```{r}
+clues.model.rf <- allocate(clues.model.rf)
+ordered.model.rf <- allocate(ordered.model.rf, stochastic=TRUE)
+```
+
+
+```{r}
+plot(clues.model.rf)
+plot(ordered.model.rf)
+```
+
+## Validation
+
+
+An important yet frequently overlooked aspect of land use change modelling is model validation. lulcc provides a recent validation method developed by Pontius et al. (2011), which simultaneously compares a reference (observed) map for time 1, a reference map for time 2 and a simulated map for time 2. The first step in this method is to calculate three dimensional contingency tables:
+
+```{r}
+# evaluate CLUE-S model output
+clues.tabs <- ThreeMapComparison(x=clues.model, factors=2^(1:8), timestep=10)
+```
+
+```{r}
+# evaluate CLUE-S model output
+clues.tabs.rpart <- ThreeMapComparison(x=clues.model.rpart, factors=2^(1:8), timestep=10)
+```
+
+```{r}
+# evaluate CLUE-S model output
+clues.tabs.rf <- ThreeMapComparison(x=clues.model.rf, factors=2^(1:8), timestep=10)
+```
+
+From these tables we can easily extract information about different types of agreement and disagreement as well as compute summary statistics such as the figure of merit:
+
+```{r}
+clues.agr <- AgreementBudget(x=clues.tabs)
+plot(clues.agr, from=1, to=2)
+plot(clues.agr, from=3, to=2)
+plot(clues.agr, from=4, to=2)
+plot(clues.agr, from=6, to=2) 
+```
+
+```{r}
+clues.fom <- FigureOfMerit(x=clues.agr)
+plot(clues.fom, from=1, to=2)
+plot(clues.fom, from=3, to=2)
+plot(clues.fom, from=4, to=2)
+plot(clues.fom, from=6, to=2)
+```
+
+
+```{r}
+clues.agr <- AgreementBudget(x=clues.tabs.rpart)
+plot(clues.agr, from=1, to=2)
+plot(clues.agr, from=3, to=2)
+plot(clues.agr, from=4, to=2)
+plot(clues.agr, from=6, to=2) 
+```
+
+```{r}
+clues.fom <- FigureOfMerit(x=clues.agr)
+plot(clues.fom, from=1, to=2)
+plot(clues.fom, from=3, to=2)
+plot(clues.fom, from=4, to=2)
+plot(clues.fom, from=6, to=2)
+```
+
+
+
+```{r}
+clues.agr <- AgreementBudget(x=clues.tabs.rf)
+plot(clues.agr, from=1, to=2)
+plot(clues.agr, from=3, to=2)
+plot(clues.agr, from=4, to=2)
+plot(clues.agr, from=6, to=2)
+```
+
+```{r}
+clues.fom <- FigureOfMerit(x=clues.agr)
+plot(clues.fom, from=1, to=2)
+plot(clues.fom, from=3, to=2)
+plot(clues.fom, from=4, to=2)
+plot(clues.fom, from=6, to=2)
+```
+
+

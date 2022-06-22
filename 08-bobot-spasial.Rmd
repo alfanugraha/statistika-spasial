@@ -1,0 +1,47 @@
+---
+title: "Praktikum 08 Bobot Spasial"
+author: "Alfa Nugraha^[Mahasiswa Pascasarjana IPB, alfanugraha@apps.ipb.ac.id]"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    theme: spacelab
+    highlight: zenburn
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: no
+    highlight: zenburn
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(spdep)
+library(rgdal)
+library(spatialreg)
+library(leaflet)
+library(RColorBrewer)
+```
+
+## Bobot Spasial
+
+Bobot spasial digunakan agar pola spasial pada data yang diamati dapat dimodelkan dengan baik.
+
+Steps in determining spatial weights:
+
+* choose the neighbour criterion to be used (pilih kriteria ketetanggaan yang akan digunakan)
+* assign weights to the identified neighbour links (tentukan bobot untuk mengidentifikasi hubungan ketetanggaan)
+
+Beberapa istilah yang digunakan:
+
+* Scale & Resolution (skala dan resolusi)
+* Aggregation
+
+
+## Skala dan Resolusi
+
+![](resoluasi.png)
+
+## Zonasi dan Agregasi
+

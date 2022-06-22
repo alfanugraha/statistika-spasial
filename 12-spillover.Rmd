@@ -1,0 +1,188 @@
+---
+title: "Praktikum 12 Efek Marginal (Spillover)"
+author: "Alfa Nugraha^[Mahasiswa Pascasarjana IPB, alfanugraha@apps.ipb.ac.id]"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    theme: spacelab
+    highlight: zenburn
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: no
+    highlight: zenburn
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(spdep)
+library(rgdal)
+library(spatialreg)
+library(leaflet)
+library(RColorBrewer)
+```
+
+Definisi yang diambil dari materi kuliah yang disusun oleh Dr. Anik Djuraidah menyatakan bahwa efek marginal atau limpahan (spill-over) adalah besarnya dampak perubahan pada peubah dependen pada wilayah-i, akibat perubahan prediktor di wilayah-j.
+
+Efek marginal terdapat pada model dependensi spasial SAR, GSM, SDM, SDEM, dan SLX. Efek ini dapat dibedakan menjadi tiga, yaitu efek langsung (direct effect), efek tidak langsung (indirect effect), dan efek total (total effect).
+
+```{r}
+data(columbus)
+col.listw <- nb2listw(col.gal.nb)
+```
+
+## Ilustrasi
+
+### OLS Regression
+
+```{r}
+columbus.lm<- lm(CRIME ~ INC + HOVAL, data=columbus)
+summary(columbus.lm)
+```
+
+### Moran test
+
+```{r}
+col.moran <- lm.morantest(columbus.lm, col.listw)
+col.moran
+```
+
+### LM-test
+
+```{r}
+columbus.lagrange <- lm.LMtests(columbus.lm, col.listw, test=c("LMerr","RLMerr","LMlag","RLMlag","SARMA"))
+summary(columbus.lagrange)
+```
+
+### Spatial Lag Model
+
+```{r}
+columbus.lag <- lagsarlm(CRIME ~ INC + HOVAL,data=columbus, col.listw)
+summary(columbus.lag)
+```
+
+
+Terlihat pada output di atas bahwa koefisien ρ signifikan pada model SAR. Selanjutnya, marginal effect dapat diperoleh dengan fungsi impacts() seperti pada syntax berikut ini.
+
+### Interpretasi Efek Marginal
+
+```{r}
+impacts(columbus.lag, listw = col.listw)
+```
+
+Terlihat bahwa pengaruh langsung dari peubah INC adalah sebesar -1.12, artinya jika rata-rata pendapatan rumah tangga di wilayah-$i$ meningkat $1,000, maka rata-rata kejadian kriminal di wilayah tersebut akan berkurang sebesar 11.2 per 100 rumah tangga, jika nilai rumahnya tetap. Sedangkan efek tak langsung dari peubah tersebut bernilai -0.678. Artinya, jika rata-rata pendapatan rumah tangga di wilayah-i meningkat sebesar $1,000, maka rata-rata kejadian kriminal di wilayah-j akan berkurang sebesar 6.78 per 100 rumah tangga, jika nilai rumahnya tetap. Interpretasi serupa juga dapat dilakukan terhadap peubah `HOVAL`.
+
+## Ilustrasi lain
+
+Ilustrasi ini diambil dari materi workshop yang disusun oleh Sarmiento-Barbieri (2016). Data yang digunakan terdapat pada http://www.econ.uiuc.edu/~lab/workshop/foreclosures/. Silahkan download semua data yang terdapat pada link tersebut.
+
+Impor data shapefile menggunakan fungsi `readOGR()` pada package rgdal. Setelah itu, kita dapat menggunakan fungsi `str()` untuk melihat struktur datanya.
+
+```{r}
+chi.poly<-readOGR(dsn=".", layer="foreclosures")
+str(slot(chi.poly,"data"))
+```
+
+Berikut adalah penjelasan mengenai peubah yang ada pada data tersebut:
+
+* `est_fcs`: estimated count of foreclosure starts from Jan. 2007 through June 2008
+* `est_mtgs`: estimated number of active mortgages from Jan. 2007 through June 2008
+* `est_fcs_rt`: number of foreclosure starts divided by number of mortgages times 100
+* `bls_unemp`: June 2008 place or county unemployment rate
+* `totpop`: total population from 2000 Census
+* `violent`: number of violent crimes reported between Jan. 2007 through December 2008
+* `property`: number of property crimes reported between Jan. 2007 through December 2008
+
+(Sarmiento-Barbieri, 2016)
+
+### Visualisasi
+
+```{r}
+plot(chi.poly)
+```
+
+```{r}
+leaflet(chi.poly) %>%
+  addPolygons(stroke = FALSE, fillOpacity = 0.5, smoothFactor = 0.5) %>%
+  addTiles()
+```
+
+```{r}
+qpal<-colorQuantile("OrRd", chi.poly@data$violent, n=9) 
+
+leaflet(chi.poly) %>%
+  addPolygons(stroke = FALSE, fillOpacity = .8, smoothFactor = 0.2, color = ~qpal(violent)
+  ) %>%
+  addTiles()
+```
+
+### OLS
+
+```{r}
+chi.ols<-lm(violent~est_fcs_rt+bls_unemp, data=chi.poly@data)
+summary(chi.ols)
+```
+
+### Modeling Spatial Dependencies
+
+```{r}
+list.queen<-poly2nb(chi.poly, queen=TRUE)
+W<-nb2listw(list.queen, style="W", zero.policy=TRUE)
+W
+```
+
+#### Checking the Spatial Autocorrelation
+
+```{r}
+moran.lm<-lm.morantest(chi.ols, W, alternative="two.sided")
+print(moran.lm)
+```
+
+#### LM Test
+
+```{r}
+LM<-lm.LMtests(chi.ols, W, test="all")
+summary(LM)
+```
+
+
+### Fitting Spatial Regressions
+
+#### SAR
+
+```{r}
+sar.chi<-lagsarlm(violent~est_fcs_rt+bls_unemp, data=chi.poly@data, W)
+summary(sar.chi)
+impacts(sar.chi, listw=W)
+```
+
+
+#### SEM
+
+```{r}
+errorsalm.chi<-errorsarlm(violent~est_fcs_rt+bls_unemp, data=chi.poly@data, W)
+summary(errorsalm.chi)
+```
+
+
+## Latihan 1
+
+Lakukan pemodelan menggunakan data chi.poly.
+
+- periksa multikolineritas antar peubah bebas yang digunakan berdasarkan VIF
+- eksplorasi autokorelasi spasial pada model menggunakan jarak W_dist
+- lakukan pemodelan yang menurut Anda paling tepat, interpretasikan.
+
+## Latihan 2
+
+Pelajari artikel yang ditulis oleh Guliyev (2020), yang tersedia pada link berikut: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7139267/. Jika memungkinkan, silahkan lakukan pemodelan regresi spasial dan interpretasikan efek marjinal pada kasus ini, berdasarkan data yang tersedia pada artikel tersebut. Catatan: peta China dapat diakses pada https://data.humdata.org/dataset/china-administrative-boundaries.
+
+## Referensi
+
+Guliyev, H. (2020). Determining the spatial effects of COVID-19 using the spatial panel data model. Spatial Statistics, 100443. doi:10.1016/j.spasta.2020.100443. Retrieved from: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7139267/
+
+Sarmiento-Barbieri, I. (2016, April 24). An introduction to spatial econometrics in R. Spatial Econometric Workshop, University of Illinois. Retrieved from: https://www.econ.uiuc.edu/~lab/workshop/Spatial_in_R.html#modeling-spatial-dependence
+
+Zhukov, Y. M. (2010, January 19). Applied Spatial Statistics in R, Section 6, Spatial Regression [PDF slides.]. IQSS, Harvard University. Retrieved from: http://www.people.fas.harvard.edu/~zhukov/Spatial6.pdf

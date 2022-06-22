@@ -1,0 +1,276 @@
+---
+title: "Praktikum 9 Autokorelasi Spasial"
+author: "Alfa Nugraha^[Mahasiswa Pascasarjana IPB, alfanugraha@apps.ipb.ac.id]"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    theme: spacelab
+    highlight: zenburn
+  html_document:
+    toc: yes
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(raster)
+library(sp)
+library(spdep)
+```
+
+
+## Joint Count Statistics 
+
+```{r}
+pri <- rep(1,12)
+seg <- rep(0,4)
+ter <- rep(1,2)
+cua <- rep(0,4)
+qui <- rep(1,2)
+sex <-  rep(0,12)
+
+A <- matrix(c(pri, seg, ter, cua ,qui, sex), nrow=6, byrow=FALSE)
+
+A
+```
+
+```{r}
+rA <- raster(A)
+rA
+```
+
+```{r}
+plot(rA)
+text(coordinates(rA), labels=rA[], cex=1.5)
+```
+
+```{r}
+pA <- rasterToPolygons(rA, dissolve=FALSE)
+pA
+```
+
+
+```{r}
+spA <- SpatialPolygons(pA@polygons)
+
+nb1 <- poly2nb(spA, queen = T)
+
+nb1
+```
+
+```{r}
+par(mai=c(0,0,0,0))
+plot(spA, col='gray', border='blue')
+xy <- coordinates(spA)
+plot(nb1, xy, col='red', lwd=2, add=TRUE)
+```
+
+```{r}
+nb2 <- poly2nb(spA, queen = F)
+
+nb2
+```
+
+```{r}
+par(mai=c(0,0,0,0))
+plot(spA, col='gray', border='blue')
+xy <- coordinates(spA)
+plot(nb2, xy, col='green', lwd=2, add=TRUE)
+```
+
+```{r}
+wl1 <- nb2listw(nb1, style='B')
+
+wl2 <- nb2listw(nb2, style='B')
+
+jc_test1 <- joincount.test(as.factor(pA$layer), wl1)
+
+jc_test1
+```
+
+
+```{r}
+jc_test2 <- joincount.test(as.factor(pA$layer), wl2)
+
+jc_test2
+```
+
+```{r}
+set.seed(123)
+jc_test3 <- joincount.mc(as.factor(pA$layer), wl1, nsim=99)
+
+jc_test3
+```
+
+## Global Autocorellation
+
+### Moran's I
+
+```{r}
+I1 <- moran.test(pA$layer,wl1)
+
+I1
+```
+
+```{r}
+set.seed(123)
+MC<- moran.mc(pA$layer, wl1, nsim=599)
+
+# View results (including p-value)
+MC
+```
+
+```{r}
+C1 <- geary.test(pA$layer,wl1)
+
+C1
+```
+
+
+```{r}
+GS1 <- geary.mc(pA$layer, wl1, nsim=599)
+
+GS1
+```
+
+
+```{r}
+oid <- order(pA$layer)
+resI <- localmoran(pA$layer, wl1)
+head(resI)
+```
+
+```{r}
+pA$z.li <- resI[,4]
+pA$pvalue <- resI[,5]
+lm.palette <- colorRampPalette(c("white","orange", "red"), space = "rgb")
+spplot(pA, zcol="z.li", col.regions=lm.palette(20), main="Local Moran")
+```
+
+```{r}
+moran.plot(pA$layer,wl1)
+```
+
+```{r}
+local_g <- localG(pA$layer, wl1)
+
+local_g
+```
+
+```{r}
+pA$localg <- as.numeric(local_g)
+lm.palette <- colorRampPalette(c("white","orange", "red"), space = "rgb")
+spplot(pA, zcol="localg", col.regions=lm.palette(20), main="Local Gi")
+```
+
+## Latihan
+
+```{r}
+data.jabar <- read.xlsx("Jabar.xlsx")
+jabar2 <- readOGR("petaJabar2/Jabar2.shp", layer="Jabar2")
+```
+
+
+```{r}
+spjabar2 <- SpatialPolygons(jabar2@polygons)
+nb_jbr <- poly2nb(spjabar2, queen = T)
+nb_jbr
+```
+
+```{r}
+par(mai=c(0,0,0,0))
+plot(spjabar2, col='gray', border='blue')
+xy <- coordinates(spjabar2)
+plot(nb_jbr, xy, col='red', lwd=2, add=TRUE)
+```
+
+```{r}
+nb_jbr_rook <- poly2nb(spjabar2, queen = F)
+nb_jbr_rook
+```
+
+```{r}
+par(mai=c(0,0,0,0))
+plot(spjabar2, col='gray', border='blue')
+plot(nb_jbr_rook, xy, col='green', lwd=2, add=TRUE)
+```
+
+Join Count Statistic
+
+```{r}
+wl_jbr <- nb2listw(nb_jbr, style='B')
+wl_jbr_rook <- nb2listw(nb_jbr_rook, style='B')
+
+jabar2$miskin15 <- data.jabar$p.miskin15
+poverty <- cut(jabar2$miskin15, breaks=c(0, 10, 20), labels=c("low", "high"))
+names(poverty) <- rownames(data.jabar)
+jc_test1 <- joincount.test(poverty, wl_jbr)
+jc_test1
+```
+```{r}
+jc_test2 <- joincount.test(poverty, wl_jbr_rook)
+jc_test2
+```
+
+```{r}
+jc_test3 <- joincount.mc(poverty, wl_jbr, nsim=99)
+jc_test3
+```
+```{r}
+I1 <- moran.test(jabar2$miskin15, wl_jbr)
+I1
+```
+
+```{r}
+MC <- moran.mc(jabar2$miskin15, wl_jbr, nsim=599)
+MC
+```
+
+```{r}
+C1 <- geary.test(jabar2$miskin15, wl_jbr)
+C1
+```
+
+```{r}
+GS1 <- geary.mc(jabar2$miskin15, wl_jbr, nsim=599)
+GS1
+```
+
+Local Morans I
+
+```{r}
+oid <- order(jabar2$miskin15)
+resI <- localmoran(jabar2$miskin15, wl_jbr)
+head(resI)
+```
+
+```{r}
+jabar2$z.li <- resI[,4]
+jabar2$pvalue <- resI[,5]
+
+label <- jabar2$KABKOT
+text_jbr <- list("sp.text", coordinates(jabar2), label, cex=0.8, col="black")
+
+lm.palette <- colorRampPalette(c("white","orange", "red"), space = "rgb")
+spplot(jabar2, zcol="z.li", col.regions=lm.palette(20), main="Local Moran", sp.layout=list(text_jbr))
+```
+
+```{r}
+moran.plot(jabar2$miskin15, wl_jbr, labels=jabar2$KABKOT, xlim=c(1, 18))
+```
+
+
+Getis-Ord Gi
+
+```{r}
+local_g <- localG(jabar2$miskin15, wl_jbr)
+local_g
+```
+
+```{r}
+jabar2$localg <- as.numeric(local_g)
+lm.palette <- colorRampPalette(c("white","orange", "red"), space = "rgb")
+spplot(jabar2, zcol="localg", col.regions=lm.palette(20), main="Local Gi", sp.layout=list(text_jbr))
+```
+

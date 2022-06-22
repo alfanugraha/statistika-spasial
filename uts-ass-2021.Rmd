@@ -1,0 +1,262 @@
+---
+title: "UTS 2021"
+output: html_notebook
+---
+
+
+```{r}
+library(sp)
+```
+
+
+```{r}
+semut <- read.delim("clipboard")
+semut2 <- read.delim("clipboard")
+semut3 <- read.delim("clipboard")
+semut3
+```
+
+
+```{r}
+barplot(as.table(as.matrix(semut3[,2:7])), main = "Jarak semut dan cacing", xlab = "Jarak", col = c("red","green"), beside=T, ylim=c(0,7))
+legend("topleft", c("Semut","Cacing"), fill = c("red","green"))
+```
+
+
+## No1
+
+```{r}
+popdens <- read.csv("uts2021_no1.csv", sep=";", header=T)
+popdens
+```
+
+## No5
+
+```{r}
+data(ants)
+```
+
+
+## SOAL KORELASI SPASIAL
+
+### Load data
+
+```{r}
+jatim <- read.delim("clipboard")
+jatim
+```
+
+```{r}
+coordinates(jatim) <- c("x", "y")
+plot(jatim)
+```
+
+### Cari matrix inverse bobot
+
+```{r}
+matrix_w <- as.matrix(dist(cbind(jatim$x, jatim$y)))
+matrix_w_inv <- 1/matrix_w 
+diag(matrix_w_inv) <- 0
+```
+
+### Hitung global index moran
+
+```{r}
+library(spdep)
+GlobalMoran <- moran.test(jatim$AHH, mat2listw(matrix_w_inv), randomisation=F)
+GlobalMoran
+```
+
+```{r}
+LocalMoran <- localmoran(jatim$AHH, listw = mat2listw(matrix_w_inv))
+LocalMoran
+```
+
+
+
+## SOAL KONFIGURASI DUA TITIK (VMR)
+
+### Load data
+
+```{r}
+rumah <- read.delim("clipboard")
+rumah
+```
+
+### Hitung VMR
+
+```{r}
+mu <- mean(rumah$JumlahHotel)
+mu
+sigma <- sd(rumah$JumlahHotel)^2
+sigma
+VMR<-sigma/mu
+VMR
+```
+
+### Hitung chi-square
+
+```{r}
+# N = banyaknya titik
+# m = banyaknya sel
+m <- 12 
+chisqhit <- (m-1)*VMR
+chistabel<-qchisq(0.05, df=m-1, lower.tail=F)
+cbind(chisqhit, chistabel)
+```
+
+
+## SOAL SEMIVARIANCE
+
+```{r}
+bogor <- read.delim("clipboard")
+sv_bogor <- read.delim("clipboard")
+```
+
+
+```{r}
+plot(sv_bogor, type='b')
+```
+
+```{r}
+ls<-lm(Semivariance~Jarak, data=sv_bogor)
+ls
+summary(ls)
+```
+
+```{r}
+aov(Semivariance~Jarak, data=sv_bogor)
+```
+
+
+```{r}
+pers <-  variogram(NilaiPencemaran ~ 1, data = bogor, cutoff = 1300, width = 90)
+pers
+plot(pers, plot.numbers=T)
+```
+
+Menghitung nilai pendugaan pencemaran di Dramaga
+
+```{r}
+# C0 = nugget effect
+# a = jarak dimana nilai semivarians konstan = 24
+# sill = 10
+bogor2 <- read.delim("clipboard")
+jarak.dists <- as.matrix(dist(cbind(bogor2$x, bogor2$y)))
+# diag(jarak.dists) <- 0
+jarak.dists
+```
+
+```{r}
+jarak.dists_w_inv <- 10*(1-2.72^(-(jarak.dists/24)))
+# diag(jarak.dists_w_inv) <- 0
+jarak.dists_w_inv
+```
+
+```{r}
+C <- jarak.dists_w_inv[2:5, 2:5]
+C <- cbind(C, c(1,1,1,1))
+C <- rbind(C, c(1,1,1,1,0))
+C
+```
+
+
+```{r}
+I <- solve(C)
+I
+```
+
+```{r}
+D <- c(jarak.dists_w_inv[1,2:5], 1)
+D
+```
+
+```{r}
+W <- I %*% D
+W
+```
+
+```{r}
+nilai_dugaan <- bogor@data$NilaiPencemaran %*% W[1:4]
+nilai_dugaan 
+```
+
+
+
+
+```{r}
+kepadatan <- read.delim("clipboard")
+kepadatan
+```
+
+```{r}
+summary(lm(log(Kepadatan)~Jarak, kepadatan))
+```
+
+
+```{r}
+tbl_sv <- read.delim("clipboard")
+tbl_sv
+```
+
+```{r}
+plot(tbl_sv, type="b")
+```
+
+```{r}
+tbl_sv$Jarak_2 <- tbl_sv$Jarak_km/2
+tbl_sv$Jarak_3 <- tbl_sv$Jarak_km/3
+tbl_sv$Jarak_4 <- tbl_sv$Jarak_km/4
+tbl_sv$Jarak_5 <- tbl_sv$Jarak_km/5
+```
+
+
+```{r}
+ls2<-lm(Semivarians~Jarak_2, data=tbl_sv)
+summary(ls2)
+```
+
+
+```{r}
+ls3<-lm(Semivarians~Jarak_3, data=tbl_sv)
+summary(ls3)
+```
+
+```{r}
+ls4<-lm(Semivarians~Jarak_4, data=tbl_sv)
+summary(ls4)
+```
+
+```{r}
+ls5<-lm(Semivarians~Jarak_5, data=tbl_sv)
+summary(ls5)
+```
+
+
+
+```{r}
+tbl_jarak <- read.delim("clipboard")
+coordinates(tbl_jarak) <- c("X", "Y")
+```
+
+
+
+```{r}
+mu <- mean(tbl_jarak$Anak.kurang.gizi)
+mu
+sigma <- sd(tbl_jarak$Anak.kurang.gizi)^2
+sigma
+VMR<-sigma/mu
+VMR
+```
+
+### Hitung chi-square
+
+```{r}
+# N = banyaknya titik
+# m = banyaknya sel
+m <- 20 
+chisqhit <- (m-1)*VMR
+chistabel<-qchisq(0.05, df=m-1, lower.tail=F)
+cbind(chisqhit, chistabel)
+```

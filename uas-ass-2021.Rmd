@@ -1,0 +1,98 @@
+---
+title: "UAS 2021"
+author: "Alfa Nugraha"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rgdal)
+library(rgeos)
+library(skimr)
+library(cowplot)
+library(corrplot)
+library(DescTools)
+library(spdep)
+```
+
+## Input data
+
+```{r}
+dataset <- read.csv("UAS2021-22.csv", sep = ";")
+dataset
+```
+
+```{r}
+str(dataset)
+```
+
+```{r}
+skim(dataset)
+```
+
+Peubah respon dalam penelitian adalah peubah Y dan peubah penjelas adalah peubah X1, X2, dan X3 dengan ringkasan data terlihat pada output di atas.
+
+```{r}
+jawa <- readOGR(dsn="Jawamap", layer="jawa")
+plot(jawa)
+head(jawa@data)
+```
+
+Peta berformat shp menyajikan 119 kabupaten/kota yang ada di Pulau Jawa.
+
+## Sebaran data
+
+```{r}
+plot_numeric_features <- function(x){
+  ggplot(dataset, aes_string(x, "y")) +
+    geom_point() +
+    geom_smooth(method = "loess", se = F) +
+    scale_x_continuous(labels = scales::comma) +
+    ylim(0, NA)
+}
+plot_grid(plot_numeric_features("x1"), plot_numeric_features("x2"), plot_numeric_features("x3"))
+
+```
+
+Tidak terdapat pencilan pada x1, x2, x3.
+
+Peubah respon y dan x1 serta x2 memiliki hubungan negatif sedangkan peubah y dengan x3 memiliki hubungan yang positif
+
+## Pola hubungan antar peubah
+
+```{r}
+corrplot(cor(dataset[, c(4:7)]), method = "number")
+```
+
+Dari visualisasi matriks korelasi, tidak terdapat korelasi yang erat antar peubah bebas. Hal ini mengindikasikan tidak terjadi multikolinieritas pada data. Namun, untuk lebih memastikan akan dilakukan pengujian pada tahap selanjutnya dengan menggunakan nilai VIF.
+
+```{r}
+reg_klasik <- lm(y~x1+x2+x3, data=dataset)
+VIF(reg_klasik)
+```
+Dari output di atas, terlihat nilai VIF < 5 berarti tidak ada multikolinieritas pada peubah prediktor X1, X2, dan X3.
+
+```{r}
+colfunc <- colorRampPalette(c("green","yellow","red")) #menentukan warna peta
+jawa$y <- dataset$y
+spplot(jawa, "y", col.regions=colfunc(119), main="Persentase Y di Pulau Jawa")
+```
+
+```{r}
+jawa$x1 <- dataset$x1
+spplot(jawa, "x1", col.regions=colfunc(119), main="Persentase X1 di Pulau Jawa")
+jawa$x2 <- dataset$x2
+spplot(jawa, "x2", col.regions=colfunc(119), main="Persentase X2 di Pulau Jawa")
+jawa$x3 <- dataset$x3
+spplot(jawa, "x3", col.regions=colfunc(119), main="Persentase X3 di Pulau Jawa")
+```
+
+```{r}
+w <- poly2nb(jawa, queen = T)
+ww <- nb2listw(w, zero.policy = TRUE)
+moran.test(dataset$y, ww, randomisation=T, alternative="greater", zero.policy = TRUE)
+```
+
+
